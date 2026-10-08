@@ -1,10 +1,12 @@
-// Roster import screen: pick a CSV/Excel/Word file (or paste a list), review
-// and edit the parsed students (fix duplicates, edit names, add/delete rows),
-// then save.
+// Import a student list into one class (?classId=): pick a CSV/Excel/Word file
+// (or paste a list), review it against the master list (new students,
+// existing matches, name conflicts), edit, then "Add to class" or "Replace
+// class list". Replacing only unlinks students from this class; it never
+// deletes students or attendance history.
 
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router, useNavigation } from 'expo-router';
+import { Stack, router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useHeaderHeight, usePreventRemove } from 'expo-router/react-navigation';
 import { FlashList } from '@shopify/flash-list';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -15,6 +17,7 @@ import { BottomBar } from '../src/components/BottomBar';
 import { Button } from '../src/components/Button';
 import { EmptyState } from '../src/components/EmptyState';
 import { RosterPreviewRow } from '../src/components/RosterPreviewRow';
+import type { ImportMode } from '../src/db/classStudents';
 import type { Student } from '../src/db/students';
 import { useRosterImport } from '../src/hooks/useRosterImport';
 import { ImportError, type RosterRow } from '../src/import/types';
@@ -47,13 +50,50 @@ function useGuardUnsaved(hasUnsaved: boolean): void {
 function describeRemovals(missing: Student[]): string {
   const shown = missing.slice(0, 5).map((s) => `• ${s.rollNo}  ${s.name}`);
   const more = missing.length > 5 ? `\n…and ${missing.length - 5} more` : '';
-  return `${shown.join('\n')}${more}\n\nRemoved students are hidden from the roster. Their past attendance is kept.`;
+  return `${shown.join('\n')}${more}\n\nThey stay in All students, and their attendance history is kept.`;
 }
 
 export default function ImportScreen() {
-  const imp = useRosterImport();
-  const { phase } = imp;
+  const { classId: classIdParam } = useLocalSearchParams<{ classId?: string }>();
+  const classId = Number(classIdParam);
+  if (!Number.isInteger(classId) || classId <= 0) {
+    return (
+      <EmptyState
+        icon="alert-circle-outline"
+        tone="error"
+        title="Choose a class first"
+        message="Open a class or subject, then import its student list from there."
+        actionLabel="Back"
+        onAction={goHome}
+      />
+    );
+  }
+  return <ClassImport classId={classId} />;
+}
 
+function ClassImport({ classId }: { classId: number }) {
+  const imp = useRosterImport(classId);
+  return (
+    <>
+      <Stack.Screen options={{ title: imp.className ? `Import to ${imp.className}` : 'Import list' }} />
+      <ImportPhaseView imp={imp} />
+    </>
+  );
+}
+
+function savedMessage(phase: Extract<RosterImport['phase'], { name: 'saved' }>): string {
+  const { created, linked, renamed, unlinked } = phase.result;
+  const parts = [
+    linked > 0 ? `${plural(linked, 'student')} added to the class` : 'No new students for this class',
+    created > 0 ? `${created} of them new to the app` : null,
+    renamed > 0 ? `${plural(renamed, 'name')} updated` : null,
+    unlinked > 0 ? `${plural(unlinked, 'student')} removed from the class (still in All students, history kept)` : null,
+  ].filter(Boolean);
+  return `${parts.join('. ')}.`;
+}
+
+function ImportPhaseView({ imp }: { imp: RosterImport }) {
+  const { phase } = imp;
   switch (phase.name) {
     case 'idle':
       return <IdleView imp={imp} />;
@@ -89,11 +129,9 @@ export default function ImportScreen() {
         <EmptyState
           icon="checkmark-circle"
           tone="positive"
-          title="Roster saved"
-          message={`${plural(phase.count, 'student')} saved.${
-            phase.removed > 0 ? ` ${plural(phase.removed, 'student')} removed from the roster (history kept).` : ''
-          }`}
-          actionLabel="Start taking attendance"
+          title={`Saved to ${imp.className ?? 'class'}`}
+          message={savedMessage(phase)}
+          actionLabel="Back to class"
           onAction={goHome}
         />
       );
@@ -110,7 +148,7 @@ function IdleView({ imp }: { imp: RosterImport }) {
     <View style={styles.flex}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
         <View style={{ gap: spacing.sm }}>
-          <Text style={[typography.title, { color: colors.textPrimary }]}>Import your class list</Text>
+          <Text style={[typography.title, { color: colors.textPrimary }]}>Import a student list</Text>
           <Text style={[typography.body, { color: colors.textSecondary }]}>
             Choose a file with one student per line: the roll number, then the name. You can check and fix everything before
             saving.
@@ -138,15 +176,14 @@ function IdleView({ imp }: { imp: RosterImport }) {
           </View>
         </View>
 
-        {imp.existingCount ? (
-          <View style={[styles.note, { backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm }]}>
-            <Ionicons name="information-circle" size={20} color={colors.primary} />
-            <Text style={[typography.caption, styles.flex, { color: colors.textPrimary }]}>
-              You already have {plural(imp.existingCount, 'student')}. Importing again updates names and adds new students.
-              Attendance history is always kept.
-            </Text>
-          </View>
-        ) : null}
+        <View style={[styles.note, { backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm }]}>
+          <Ionicons name="information-circle" size={20} color={colors.primary} />
+          <Text style={[typography.caption, styles.flex, { color: colors.textPrimary }]}>
+            {imp.classSize > 0
+              ? `${imp.className ?? 'This class'} has ${plural(imp.classSize, 'student')}. After checking the file you can add to that list or replace it. Attendance history is always kept.`
+              : 'Students already saved in another class are matched by roll number, so they are never duplicated.'}
+          </Text>
+        </View>
       </ScrollView>
 
       <BottomBar>
@@ -238,10 +275,10 @@ function PreviewView({ imp }: { imp: RosterImport }) {
   useGuardUnsaved(imp.rows.length > 0 && !saving);
 
   const runSave = useCallback(
-    async (removeMissing: boolean) => {
+    async (mode: ImportMode) => {
       setSaving(true);
       try {
-        await imp.save(removeMissing);
+        await imp.save(mode);
       } catch (e) {
         Alert.alert("Couldn't save", e instanceof ImportError ? e.message : 'Please try again.');
       } finally {
@@ -251,27 +288,21 @@ function PreviewView({ imp }: { imp: RosterImport }) {
     [imp]
   );
 
-  const onSave = useCallback(async () => {
-    let missing: Student[] = [];
-    try {
-      missing = await imp.findRemovals();
-    } catch {
-      // If the comparison fails, save without removing anyone (the safe choice).
-    }
+  const confirmReplace = useCallback(() => {
+    const missing = imp.replaceRemovals;
     if (missing.length === 0) {
-      await runSave(false);
+      void runSave('replace');
       return;
     }
     Alert.alert(
-      `${plural(missing.length, 'student')} not in this file`,
-      describeRemovals(missing),
+      `Remove ${plural(missing.length, 'student')} from ${imp.className ?? 'this class'}?`,
+      `They are not in this list:\n${describeRemovals(missing)}`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Keep them', onPress: () => void runSave(false) },
-        { text: 'Remove', style: 'destructive', onPress: () => void runSave(true) },
+        { text: 'Replace list', style: 'destructive', onPress: () => void runSave('replace') },
       ]
     );
-  }, [imp, runSave]);
+  }, [imp.replaceRemovals, imp.className, runSave]);
 
   const renderItem = useCallback(
     ({ item }: { item: RosterRow }) => (
@@ -279,13 +310,15 @@ function PreviewView({ imp }: { imp: RosterImport }) {
         row={item}
         problem={imp.problemByKey.get(item.key)}
         isDuplicate={imp.duplicateKeys.has(item.key)}
+        match={imp.matches.get(item.key)}
+        onToggleUseNewName={imp.toggleUseNewName}
         onChangeName={imp.updateName}
         onChangeRoll={imp.updateRoll}
         onDelete={imp.deleteRow}
         onKeep={imp.keepDuplicate}
       />
     ),
-    [imp.problemByKey, imp.duplicateKeys, imp.updateName, imp.updateRoll, imp.deleteRow, imp.keepDuplicate]
+    [imp.problemByKey, imp.duplicateKeys, imp.matches, imp.toggleUseNewName, imp.updateName, imp.updateRoll, imp.deleteRow, imp.keepDuplicate]
   );
 
   return (
@@ -298,7 +331,7 @@ function PreviewView({ imp }: { imp: RosterImport }) {
         data={imp.rows}
         renderItem={renderItem}
         keyExtractor={(item) => item.key}
-        extraData={imp.problemByKey}
+        extraData={[imp.problemByKey, imp.matches]}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListHeaderComponent={<PreviewHeader imp={imp} />}
@@ -316,11 +349,13 @@ function PreviewView({ imp }: { imp: RosterImport }) {
           </Text>
         ) : null}
         <View style={[styles.row, { gap: spacing.sm }]}>
-          <Button label="Change file" icon="swap-horizontal" variant="secondary" onPress={() => confirmDiscard(imp.reset)} disabled={saving} />
+          {imp.classSize > 0 ? (
+            <Button label="Replace list" icon="swap-horizontal" variant="secondary" onPress={confirmReplace} disabled={!imp.canSave || saving} />
+          ) : null}
           <Button
-            label={`Save roster (${imp.rows.length})`}
+            label={imp.classSize > 0 ? `Add to class (${imp.rows.length})` : `Save to class (${imp.rows.length})`}
             icon="checkmark"
-            onPress={() => void onSave()}
+            onPress={() => void runSave('add')}
             disabled={!imp.canSave}
             loading={saving}
             style={styles.flex}
@@ -343,6 +378,13 @@ function PreviewHeader({ imp }: { imp: RosterImport }) {
           <Text style={[typography.caption, styles.flex, { color: colors.textSecondary }]} numberOfLines={1}>
             {imp.fileName}
           </Text>
+          <Pressable
+            onPress={() => confirmDiscard(imp.reset)}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.textButton, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Text style={[typography.bodyStrong, { color: colors.primary }]}>Change file</Text>
+          </Pressable>
         </View>
         <Text style={[typography.title, { color: colors.textPrimary }]}>
           {imp.rows.length === 1 ? '1 student found' : `${imp.rows.length} students found`}
@@ -350,8 +392,28 @@ function PreviewHeader({ imp }: { imp: RosterImport }) {
             <Text style={[typography.subtitle, { color: colors.textSecondary }]}>{`, ${plural(imp.skipped.length, 'line')} skipped`}</Text>
           ) : null}
         </Text>
-        <Text style={[typography.caption, { color: colors.textSecondary }]}>Tap a roll number or name to edit it.</Text>
+        <Text style={[typography.caption, { color: colors.textSecondary }]}>
+          {[
+            imp.summary.new > 0 ? `${imp.summary.new} new` : null,
+            imp.summary.existing > 0 ? `${imp.summary.existing} existing` : null,
+            imp.summary.conflicts > 0 ? plural(imp.summary.conflicts, 'name conflict') : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+          {imp.summary.alreadyInClass > 0 ? ` (${imp.summary.alreadyInClass} already in this class)` : ''}
+        </Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>Tap a roll number or name to edit it.</Text>
       </View>
+
+      {imp.summary.conflicts > 0 ? (
+        <View style={[styles.note, { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm }]}>
+          <Ionicons name="swap-horizontal" size={20} color={colors.warning} />
+          <Text style={[typography.caption, styles.flex, { color: colors.textPrimary }]}>
+            {imp.summary.conflicts === 1 ? '1 roll number is' : `${imp.summary.conflicts} roll numbers are`} already saved with a different
+            name. The saved name is kept unless you tap “Use new name” on that row. Names are shared across all classes.
+          </Text>
+        </View>
+      ) : null}
 
       {imp.duplicateGroupCount > 0 ? (
         <View style={[styles.note, { backgroundColor: colors.dangerSoft, borderRadius: radius.md, padding: spacing.md, gap: spacing.sm }]}>
@@ -428,6 +490,7 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 12, paddingVertical: 6 },
   mono: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) },
   addLink: { minHeight: 48 },
+  textButton: { minHeight: 48, minWidth: 48, justifyContent: 'center', paddingHorizontal: 4 },
   progressTrack: { width: '80%', height: 8, overflow: 'hidden' },
   progressFill: { height: 8 },
 });

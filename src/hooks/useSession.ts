@@ -1,5 +1,5 @@
-// Loads the roster and the absences for one (date, period) session, and marks
-// students absent/present. Updates are optimistic (the UI changes instantly)
+// Loads a class's students and the absences for one (class, date, period)
+// session, and marks students absent/present. Updates are optimistic (the UI changes instantly)
 // and each change is written to SQLite immediately; failures roll back.
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -8,7 +8,7 @@ import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { clearAbsences, getAbsentStudentIds, markAbsent, markPresent } from '../db/attendance';
-import { listActiveStudents, type Student } from '../db/students';
+import { listClassStudents, type Student } from '../db/students';
 import { afterPendingWrites } from '../db/writeQueue';
 import { tapHaptic, warningHaptic } from '../utils/haptics';
 
@@ -20,8 +20,8 @@ interface Marks {
 
 const NO_ABSENCES: ReadonlySet<number> = new Set();
 
-function sessionKey(date: string, period: number): string {
-  return `${date}|${period}`;
+function sessionKey(classId: number, date: string, period: number): string {
+  return `${classId}|${date}|${period}`;
 }
 
 function withMark(ids: ReadonlySet<number>, id: number, absent: boolean): Set<number> {
@@ -50,9 +50,9 @@ export interface SessionState {
   reload: () => void;
 }
 
-export function useSession(date: string, period: number): SessionState {
+export function useSession(classId: number, date: string, period: number): SessionState {
   const db = useSQLiteContext();
-  const key = sessionKey(date, period);
+  const key = sessionKey(classId, date, period);
 
   const [students, setStudents] = useState<Student[] | null>(null);
   const [marks, setMarks] = useState<Marks | null>(null);
@@ -76,7 +76,7 @@ export function useSession(date: string, period: number): SessionState {
     const read = () => {
       const generation = writeGeneration.current;
       // Read after queued writes, so the result includes every mark made so far.
-      afterPendingWrites(() => Promise.all([listActiveStudents(db), getAbsentStudentIds(db, date, period)]))
+      afterPendingWrites(() => Promise.all([listClassStudents(db, classId), getAbsentStudentIds(db, classId, date, period)]))
         .then(([roster, absent]) => {
           if (request !== requestId.current) return; // a newer load or date/period superseded this one
           if (generation !== writeGeneration.current) {
@@ -84,7 +84,7 @@ export function useSession(date: string, period: number): SessionState {
             return;
           }
           setStudents(roster);
-          setMarks({ key: sessionKey(date, period), absent });
+          setMarks({ key: sessionKey(classId, date, period), absent });
           setError(null);
         })
         .catch(() => {
@@ -92,7 +92,7 @@ export function useSession(date: string, period: number): SessionState {
         });
     };
     read();
-  }, [db, date, period]);
+  }, [db, classId, date, period]);
 
   // Runs on focus (so imports and absentee edits show up) and on every date/period change.
   useFocusEffect(load);
@@ -109,13 +109,13 @@ export function useSession(date: string, period: number): SessionState {
       };
 
       update(absent);
-      const write = absent ? markAbsent(db, date, period, studentId) : markPresent(db, date, period, studentId);
+      const write = absent ? markAbsent(db, classId, date, period, studentId) : markPresent(db, classId, date, period, studentId);
       write.catch(() => {
         update(!absent);
         reportWriteError();
       });
     },
-    [db, date, period, key]
+    [db, classId, date, period, key]
   );
 
   const toggle = useCallback(
@@ -129,14 +129,14 @@ export function useSession(date: string, period: number): SessionState {
     absentRef.current = new Set();
     setMarks({ key, absent: new Set() });
     try {
-      await clearAbsences(db, date, period);
+      await clearAbsences(db, classId, date, period);
       tapHaptic();
     } catch {
       if (keyRef.current === key) absentRef.current = previous;
       setMarks((prev) => (prev && prev.key === key ? { key, absent: new Set(previous) } : prev));
       reportWriteError();
     }
-  }, [db, date, period, key]);
+  }, [db, classId, date, period, key]);
 
   const stats = useMemo(() => {
     const total = students?.length ?? 0;

@@ -26,6 +26,8 @@ import { tapHaptic } from '../utils/haptics';
 
 interface CalendarModalProps {
   visible: boolean;
+  /** Class whose absences are dotted on the calendar; null for no dots. */
+  classId: number | null;
   value: string;
   onSelect: (date: string) => void;
   onClose: () => void;
@@ -33,11 +35,11 @@ interface CalendarModalProps {
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-export function CalendarModal({ visible, value, onSelect, onClose }: CalendarModalProps) {
+export function CalendarModal({ visible, classId, value, onSelect, onClose }: CalendarModalProps) {
   const { colors, spacing, radius, typography, touchTarget, motion } = useTheme();
   const insets = useSafeAreaInsets();
   const [month, setMonth] = useState(() => startOfMonth(parseISODate(value) ?? new Date()));
-  const marked = useDatesWithAbsences(month, visible);
+  const marked = useDatesWithAbsences(classId, month, visible);
   const today = todayISO();
 
   const days = useMemo(

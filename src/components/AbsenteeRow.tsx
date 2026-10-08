@@ -4,13 +4,13 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import type { Student } from '../db/students';
+import type { AbsentStudent } from '../db/attendance';
 import { useTheme } from '../theme/ThemeProvider';
 import { MAX_FONT_SCALE } from '../theme/tokens';
 
 interface AbsenteeRowProps {
-  student: Student;
-  onMarkPresent: (student: Student) => void;
+  student: AbsentStudent;
+  onMarkPresent: (student: AbsentStudent) => void;
 }
 
 function AbsenteeRowBase({ student, onMarkPresent }: AbsenteeRowProps) {
@@ -41,8 +41,8 @@ function AbsenteeRowBase({ student, onMarkPresent }: AbsenteeRowProps) {
         <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[typography.body, { color: colors.textPrimary }]} numberOfLines={1}>
           {student.name}
         </Text>
-        {!student.active ? (
-          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[typography.caption, { color: colors.textMuted }]}>No longer on the roster</Text>
+        {!student.inClass ? (
+          <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={[typography.caption, { color: colors.textMuted }]}>No longer in this class</Text>
         ) : null}
       </View>
       <Pressable

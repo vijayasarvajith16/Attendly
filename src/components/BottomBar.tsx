@@ -1,5 +1,6 @@
 // Bottom action area that sits above the home indicator, keeping primary
-// actions within thumb reach for one-handed use.
+// actions within thumb reach for one-handed use. Pass safeArea={false} inside
+// tab screens, where the tab bar already clears the home indicator.
 
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -7,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../theme/ThemeProvider';
 
-export function BottomBar({ children }: { children: ReactNode }) {
+export function BottomBar({ children, safeArea = true }: { children: ReactNode; safeArea?: boolean }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -20,7 +21,7 @@ export function BottomBar({ children }: { children: ReactNode }) {
           borderTopColor: colors.border,
           paddingHorizontal: spacing.lg,
           paddingTop: spacing.md,
-          paddingBottom: spacing.md + insets.bottom,
+          paddingBottom: spacing.md + (safeArea ? insets.bottom : 0),
           gap: spacing.sm,
         },
       ]}

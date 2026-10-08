@@ -1,57 +1,58 @@
-// Absentees for one (date, period) session plus the roster size, with an
+// Absentees for one (class, date, period) session plus the class size, with an
 // un-mark action. Reloads on focus and whenever the date or period changes.
 
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import { listAbsentees, markPresent } from '../db/attendance';
-import { countActiveStudents, type Student } from '../db/students';
+import { listAbsentees, markPresent, type AbsentStudent } from '../db/attendance';
+import { listClassStudents } from '../db/students';
+import { afterPendingWrites } from '../db/writeQueue';
 import { tapHaptic } from '../utils/haptics';
 
 interface Loaded {
   key: string;
-  absentees: Student[];
+  absentees: AbsentStudent[];
   total: number;
 }
 
-export function useAbsentees(date: string, period: number) {
+export function useAbsentees(classId: number, date: string, period: number) {
   const db = useSQLiteContext();
-  const key = `${date}|${period}`;
+  const key = `${classId}|${date}|${period}`;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const load = useCallback(() => {
     const request = ++requestId.current;
-    Promise.all([listAbsentees(db, date, period), countActiveStudents(db)])
-      .then(([absentees, total]) => {
+    afterPendingWrites(() => Promise.all([listAbsentees(db, classId, date, period), listClassStudents(db, classId)]))
+      .then(([absentees, members]) => {
         if (request !== requestId.current) return;
-        setLoaded({ key: `${date}|${period}`, absentees, total });
+        setLoaded({ key: `${classId}|${date}|${period}`, absentees, total: members.length });
         setError(null);
       })
       .catch(() => {
         if (request === requestId.current) setError('The absentee list could not be loaded.');
       });
-  }, [db, date, period]);
+  }, [db, classId, date, period]);
 
   useFocusEffect(load);
 
   /** Marks a student present again. Throws if the change could not be saved. */
   const unmark = useCallback(
-    async (student: Student) => {
+    async (student: AbsentStudent) => {
       tapHaptic();
       const drop = (list: Loaded | null) =>
         list && list.key === key ? { ...list, absentees: list.absentees.filter((s) => s.id !== student.id) } : list;
       setLoaded(drop);
       try {
-        await markPresent(db, date, period, student.id);
+        await markPresent(db, classId, date, period, student.id);
       } catch (e) {
         load(); // restore the true state
         throw e;
       }
     },
-    [db, date, period, key, load]
+    [db, classId, date, period, key, load]
   );
 
   const current = loaded?.key === key ? loaded : null;

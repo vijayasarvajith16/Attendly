@@ -13,10 +13,12 @@ import { CalendarModal } from './CalendarModal';
 
 interface DateStepperProps {
   value: string;
+  /** Class whose absences are dotted in the calendar picker. */
+  classId: number | null;
   onChange: (date: string) => void;
 }
 
-export function DateStepper({ value, onChange }: DateStepperProps) {
+export function DateStepper({ value, classId, onChange }: DateStepperProps) {
   const { colors, spacing, radius, typography, touchTarget } = useTheme();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const isToday = value === todayISO();
@@ -65,7 +67,7 @@ export function DateStepper({ value, onChange }: DateStepperProps) {
       {chevron(1)}
 
       {calendarOpen ? (
-        <CalendarModal visible value={value} onSelect={onChange} onClose={() => setCalendarOpen(false)} />
+        <CalendarModal visible classId={classId} value={value} onSelect={onChange} onClose={() => setCalendarOpen(false)} />
       ) : null}
     </View>
   );

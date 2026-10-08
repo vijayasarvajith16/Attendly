@@ -7,23 +7,31 @@ import { useTheme } from '../theme/ThemeProvider';
 import { Button } from './Button';
 
 interface AddStudentFormProps {
-  /** Returns an error message to show, or null when the student was added. */
-  onAdd: (rollNo: string, name: string) => string | null;
+  /** Returns an error message to show, or null when the student was added. May be async. */
+  onAdd: (rollNo: string, name: string) => string | null | Promise<string | null>;
+  autoFocus?: boolean;
 }
 
-export function AddStudentForm({ onAdd }: AddStudentFormProps) {
+export function AddStudentForm({ onAdd, autoFocus = false }: AddStudentFormProps) {
   const { scheme, colors, spacing, radius, typography, touchTarget } = useTheme();
   const [rollNo, setRollNo] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const nameRef = useRef<TextInput>(null);
 
-  const submit = () => {
-    const message = onAdd(rollNo, name);
-    setError(message);
-    if (!message) {
-      setRollNo('');
-      setName('');
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const message = await onAdd(rollNo, name);
+      setError(message);
+      if (!message) {
+        setRollNo('');
+        setName('');
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -51,6 +59,7 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
           placeholderTextColor={colors.textMuted}
           autoCapitalize="characters"
           autoCorrect={false}
+          autoFocus={autoFocus}
           returnKeyType="next"
           onSubmitEditing={() => nameRef.current?.focus()}
           style={[inputStyle, styles.roll]}
@@ -66,13 +75,13 @@ export function AddStudentForm({ onAdd }: AddStudentFormProps) {
           autoCapitalize="words"
           autoCorrect={false}
           returnKeyType="done"
-          onSubmitEditing={submit}
+          onSubmitEditing={() => void submit()}
           style={[inputStyle, styles.flex]}
           maxLength={100}
         />
       </View>
       {error ? <Text style={[typography.caption, { color: colors.danger }]}>{error}</Text> : null}
-      <Button label="Add student" icon="person-add-outline" variant="secondary" onPress={submit} />
+      <Button label="Add student" icon="person-add-outline" variant="secondary" onPress={() => void submit()} loading={busy} />
     </View>
   );
 }

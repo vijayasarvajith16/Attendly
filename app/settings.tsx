@@ -13,12 +13,13 @@ import { BackupError, countBackup, type DataCounts } from '../src/db/backup';
 import { MAX_PERIODS_PER_DAY, MIN_PERIODS_PER_DAY } from '../src/db/settings';
 import { useSettings } from '../src/hooks/useSettings';
 import { useTheme } from '../src/theme/ThemeProvider';
+import { useToast } from '../src/components/Toast';
 import { plural } from '../src/utils/format';
 import { warningHaptic } from '../src/utils/haptics';
 import { ShareUnavailableError } from '../src/utils/shareFile';
 
 function describeCounts(c: DataCounts): string {
-  return `${plural(c.students, 'student')} · ${plural(c.absences, 'absence')} over ${plural(c.days, 'day')}`;
+  return `${plural(c.classes, 'class', 'classes')} · ${plural(c.students, 'student')} · ${plural(c.absences, 'absence')} over ${plural(c.days, 'day')}`;
 }
 
 function formatExportedAt(iso: string): string {
@@ -36,6 +37,7 @@ export default function SettingsScreen() {
   const { colors, spacing, typography } = useTheme();
   const insets = useSafeAreaInsets();
   const settings = useSettings();
+  const toast = useToast();
   const { counts, busy } = settings;
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
@@ -70,13 +72,13 @@ export default function SettingsScreen() {
           onPress: () => {
             settings
               .restore(backup)
-              .then(() => Alert.alert('Backup restored', `${plural(incoming.students, 'student')} and ${plural(incoming.absences, 'absence')} restored.`))
+              .then(() => toast.show(`Backup restored: ${plural(incoming.classes, 'class', 'classes')}, ${plural(incoming.students, 'student')}`))
               .catch((e: unknown) => showError('Restore failed', e, 'Nothing was changed. Please try again.'));
           },
         },
       ]
     );
-  }, [settings, counts]);
+  }, [settings, counts, toast]);
 
   const clearEverything = useCallback(() => {
     const finalConfirm = () =>
@@ -88,7 +90,7 @@ export default function SettingsScreen() {
           onPress: () => {
             settings
               .clearAll()
-              .then(() => Alert.alert('All data cleared', 'The app is now empty. Import a student list to start again.'))
+              .then(() => toast.show('All data cleared'))
               .catch((e: unknown) => showError('Could not clear data', e, 'Nothing was deleted. Please try again.'));
           },
         },
@@ -96,14 +98,14 @@ export default function SettingsScreen() {
 
     Alert.alert(
       'Clear all data?',
-      `This permanently deletes ${counts ? describeCounts(counts) : 'all students and attendance'} and your settings from this phone.`,
+      `This permanently deletes ${counts ? describeCounts(counts) : 'all classes, students and attendance'} and your settings from this phone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Export backup first', onPress: () => void exportBackup() },
         { text: 'Continue', style: 'destructive', onPress: finalConfirm },
       ]
     );
-  }, [settings, counts, exportBackup]);
+  }, [settings, counts, exportBackup, toast]);
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.lg + insets.bottom, gap: spacing.xl }}>
@@ -146,7 +148,7 @@ export default function SettingsScreen() {
 
       <Section title="DANGER ZONE">
         <Text style={[typography.caption, { color: colors.textSecondary }]}>
-          Deletes every student, all attendance and your settings from this phone.
+          Deletes every class, student and attendance record, and your settings, from this phone.
         </Text>
         <Button label="Clear all data" icon="trash-outline" variant="danger" onPress={clearEverything} loading={busy === 'clear'} disabled={busy !== null} fullWidth />
       </Section>
