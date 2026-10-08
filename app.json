@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.vijayasarvajith.attendly",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,6 +31,12 @@
     "scheme": "attendly",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a5d0f803-b86a-47d0-a8ab-3d6bf41da6cf"
+      }
     }
   }
 }
